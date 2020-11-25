@@ -1,0 +1,20 @@
+read_frame costs time: 0.046000 ms
+avcodec_decode_video2 costs time: 15.137000 ms
+av_frame_get_best_effort_timestamp costs time: 0.013000 ms
+push the decoded frame into the filtergraph costs time: 0.005000 ms
+pull filtered frames from the filtergraph costs time: 0.741000 ms
+format is yuv420p
+frame widht=1920,frame height=1080
+write_frame costs time: 1.124000 ms
+
+
+
+read_frame costs time: 0.093000 ms
+avcodec_decode_video2 costs time: 29.115000 ms
+av_frame_get_best_effort_timestamp costs time: 0.012000 ms
+push the decoded frame into the filtergraph costs time: 0.006000 ms
+pull filtered frames from the filtergraph costs time: 0.778000 ms
+format is yuv420p
+frame widht=1920,frame height=1080
+write_frame costs time: 1.225000 ms
+
