@@ -1,6 +1,5 @@
-#include "filtering_video.h"
+#include "filter_video.h"
 
-//#include <stdlib.h>
 #include <time.h>
 
 //缩放滤镜，以下命令将视频缩小一半,iw,ih指的是输入的视频宽和高，
@@ -13,40 +12,30 @@
 //画中画
 //const char *filter_descr = "movie=coverr2.mp4[wm];[in][wm]overlay=100:200[out]";
 
-AVFilterContext *buffersink_ctx;
-AVFilterContext *buffersrc_ctx;
-AVFilterGraph *filter_graph;
-static AVFormatContext *fmt_ctx;
-static AVCodecContext *dec_ctx;
-static int video_stream_index = -1;
-
-AVFilterInOut *outputs;
-AVFilterInOut *inputs;
-
-static int init_filters(const char *filters_descr, char *args) {
+int FilterVideo::init_filters(const char *filters_descr, char *args) {
     int ret = 0;
-    AVFilter *buffersrc = avfilter_get_by_name("buffer");
-    AVFilter *buffersink = avfilter_get_by_name("buffersink");
+    const AVFilter *buffersrc = avfilter_get_by_name("buffer");
+    const AVFilter *buffersink = avfilter_get_by_name("buffersink");
     AVFilterInOut *outputs = avfilter_inout_alloc();
     AVFilterInOut *inputs = avfilter_inout_alloc();
     enum AVPixelFormat pix_fmts[] = {AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE};
 
-    filter_graph = avfilter_graph_alloc();
-    if (!outputs || !inputs || !filter_graph) {
+    this->filter_graph = avfilter_graph_alloc();
+    if (!outputs || !inputs || !this->filter_graph) {
         ret = AVERROR(ENOMEM);
         goto end;
     }
 
-    ret = avfilter_graph_create_filter(&buffersrc_ctx, buffersrc, "in",
-                                       args, NULL, filter_graph);
+    ret = avfilter_graph_create_filter(&this->buffersrc_ctx, buffersrc, "in",
+                                       args, NULL, this->filter_graph);
     if (ret < 0) {
         av_log(NULL, AV_LOG_ERROR, "Cannot create buffer source\n");
         goto end;
     }
 
     /* buffer video sink: to terminate the filter chain. */
-    ret = avfilter_graph_create_filter(&buffersink_ctx, buffersink, "out",
-                                       NULL, NULL, filter_graph);
+    ret = avfilter_graph_create_filter(&this->buffersink_ctx, buffersink, "out",
+                                       NULL, NULL, this->filter_graph);
     if (ret < 0) {
         av_log(NULL, AV_LOG_ERROR, "Cannot create buffer sink\n");
         goto end;
@@ -71,7 +60,7 @@ static int init_filters(const char *filters_descr, char *args) {
      * default.
      */
     outputs->name = av_strdup("in");
-    outputs->filter_ctx = buffersrc_ctx;
+    outputs->filter_ctx = this->buffersrc_ctx;
     outputs->pad_idx = 0;
     outputs->next = NULL;
 
@@ -86,11 +75,11 @@ static int init_filters(const char *filters_descr, char *args) {
     inputs->pad_idx = 0;
     inputs->next = NULL;
 
-    if ((ret = avfilter_graph_parse_ptr(filter_graph, filters_descr,
+    if ((ret = avfilter_graph_parse_ptr(this->filter_graph, filters_descr,
                                         &inputs, &outputs, NULL)) < 0)
         goto end;
 
-    if ((ret = avfilter_graph_config(filter_graph, NULL)) < 0)
+    if ((ret = avfilter_graph_config(this->filter_graph, NULL)) < 0)
         goto end;
 
     end:
@@ -100,32 +89,35 @@ static int init_filters(const char *filters_descr, char *args) {
     return ret;
 }
 
-int init_filtering_drawtext(char *args) {
-    const char *filter_descr_drawtext = "drawtext=fontfile=FreeSans.ttf:fontcolor=blue@0.5:"
-                                        "fontsize=150:x=200:y=500:box=1: boxcolor=red@0.2:text='Hello,this is text'";
-    if (init_filters(filter_descr_drawtext, args) < 0)
+int FilterVideo::init_filtering_drawtext(char *args) {
+    //const char *filter_descr_drawtext = "drawtext=fontfile=FreeSans.ttf:fontcolor=blue@0.5:"
+                                        "fontsize=100:x=200:y=500:box=1: boxcolor=red@0.2:text='Hello,this is init text'";
+    const char *filter_descr_drawtext = "movie=coverr3.mp4[logo];[in][logo]overlay=x=400:y=500[out]";
+    if (this->init_filters(filter_descr_drawtext, args) < 0)
         return 1;
     return 0;
 }
 
-int update_filters_drawtext() {
-    char *target = "drawtext";
+int FilterVideo::update_filters_drawtext() {
+    char *target = "overlay";
     char *cmd = "reinit";
-    char *arg = "fontsize=56:fontcolor=blue@0.7:text=update hello";
+    //char *arg = "fontsize=56:fontcolor=blue@0.7:text=update hello";
+    //char *arg = "text=update hello";
+    char *arg = "x=500:y=600";
     char res[512];
     int ret = 0;
-    ret = avfilter_graph_send_command(filter_graph,target,cmd,arg,res,512,1);
+    ret = avfilter_graph_send_command(this->filter_graph,target,cmd,arg,res,512,1);
     return ret;
 }
 
-AVFrame *filtering_drawtext(AVFrame *frame) {
+AVFrame *FilterVideo::filtering_drawtext(AVFrame *frame) {
     AVFrame *filt_frame = av_frame_alloc();
     /* push the decoded frame into the filtergraph */
-    if (av_buffersrc_add_frame_flags(buffersrc_ctx, frame, AV_BUFFERSRC_FLAG_KEEP_REF) < 0) {
+    if (av_buffersrc_add_frame_flags(this->buffersrc_ctx, frame, AV_BUFFERSRC_FLAG_KEEP_REF) < 0) {
         av_log(NULL, AV_LOG_ERROR, "Error while feeding the filtergraph\n");
         //return -1;
     }
-    av_buffersink_get_frame(buffersink_ctx, filt_frame);
+    av_buffersink_get_frame(this->buffersink_ctx, filt_frame);
 
     return filt_frame;
 }

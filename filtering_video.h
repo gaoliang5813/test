@@ -13,7 +13,7 @@
 #include <libavfilter/buffersrc.h>
 #include <libavutil/opt.h>
 
-int init_filtering_drawtext();
+int init_filtering_drawtext(char *args);
 int update_filters_drawtext();
 AVFrame *filtering_drawtext(AVFrame *frame);
 

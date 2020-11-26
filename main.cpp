@@ -1,14 +1,12 @@
 extern "C"
 {
-#include "filtering_video.h"
-
 #include "libavcodec/avcodec.h"
 #include "libavformat/avformat.h"
 #include "libswscale/swscale.h"
 #include "libavutil/imgutils.h"
 #include <libavutil/opt.h>
 }
-
+#include "filter_video.h"
 #include <iostream>
 
 using namespace std;
@@ -68,8 +66,12 @@ static void write_frame(const AVFrame *frame) {
 
 int main(int argc, char **argv) {
 
-    char input_file[] = "coverr3.mp4";
+    char input_file[] = "coverr2.mp4";
     cout << "input file: " << input_file << endl;
+
+    FilterVideo filter_drawtext;
+    FilterVideo filter_scale;
+
 
     int ret;
     AVPacket packet;
@@ -82,12 +84,35 @@ int main(int argc, char **argv) {
         exit(1);
     }
     av_register_all();
-    if ((ret = open_input_file(input_file)) < 0)
-        goto end;
+    if ((ret = open_input_file(input_file)) < 0) {
+        cout << "open input file failed" << endl;
+    }
 
-    init_filtering_drawtext();
+    char args[512];
+    AVRational time_base = fmt_ctx->streams[video_stream_index]->time_base;
+    /* buffer video source: the decoded frames from the decoder will be inserted here. */
+    snprintf(args, sizeof(args),
+             "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d",
+             dec_ctx->width, dec_ctx->height, dec_ctx->pix_fmt,
+             time_base.num, time_base.den,
+             dec_ctx->sample_aspect_ratio.num, dec_ctx->sample_aspect_ratio.den);
 
+
+    if ((ret = filter_drawtext.init_filtering_drawtext(args)) >= 0) {
+        cout << "init filtering drawtext successful" << endl;
+    };
+
+    int frame_count = 0;
     while (1) {
+        frame_count++;
+        if (frame_count > 100) {
+            if ((ret = filter_drawtext.update_filters_drawtext()) >= 0) {
+                cout << "update filtering drawtext successful" << endl;
+            } else {
+                cout << "update filtering drawtext failed" << endl;
+            }
+            frame_count = 0;
+        }
         if ((ret = av_read_frame(fmt_ctx, &packet)) < 0)
             break;
 
@@ -103,9 +128,10 @@ int main(int argc, char **argv) {
                 frame->pts = av_frame_get_best_effort_timestamp(frame);
 
                 //filter_1
-                filt_frame = filtering_drawtext(frame);
+                filt_frame = filter_drawtext.filtering_drawtext(frame);
 
                 //filter_2
+
 
                 write_frame(filt_frame);
                 av_frame_unref(filt_frame);
@@ -116,7 +142,6 @@ int main(int argc, char **argv) {
     }
 
 
-    end:
     avcodec_close(dec_ctx);
     avformat_close_input(&fmt_ctx);
     av_frame_free(&frame);
