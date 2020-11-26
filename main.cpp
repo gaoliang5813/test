@@ -98,7 +98,7 @@ int main(int argc, char **argv) {
              dec_ctx->sample_aspect_ratio.num, dec_ctx->sample_aspect_ratio.den);
 
 
-    if ((ret = filter_drawtext.init_filtering_drawtext(args)) >= 0) {
+    if ((ret = filter_drawtext.init_filtering_drawtext(args,"FreeSansFreeSans.ttf", "blue@0.5", 100, 1,"red@0.5", "this is word", 10, 10)) >= 0) {
         cout << "init filtering drawtext successful" << endl;
     };
 
@@ -106,7 +106,7 @@ int main(int argc, char **argv) {
     while (1) {
         frame_count++;
         if (frame_count > 100) {
-            if ((ret = filter_drawtext.update_filters_drawtext()) >= 0) {
+            if ((ret = filter_drawtext.update_filters_drawtext("text=update text")) >= 0) {
                 cout << "update filtering drawtext successful" << endl;
             } else {
                 cout << "update filtering drawtext failed" << endl;
@@ -128,12 +128,13 @@ int main(int argc, char **argv) {
                 frame->pts = av_frame_get_best_effort_timestamp(frame);
 
                 //filter_1
-                filt_frame = filter_drawtext.filtering_drawtext(frame);
+                //filt_frame = filter_drawtext.filtering_drawtext(frame);
+                frame = filter_drawtext.filtering_drawtext(frame);
 
                 //filter_2
 
 
-                write_frame(filt_frame);
+                write_frame(frame);
                 av_frame_unref(filt_frame);
                 av_frame_unref(frame);
             }

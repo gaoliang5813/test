@@ -89,24 +89,33 @@ int FilterVideo::init_filters(const char *filters_descr, char *args) {
     return ret;
 }
 
-int FilterVideo::init_filtering_drawtext(char *args) {
-    //const char *filter_descr_drawtext = "drawtext=fontfile=FreeSans.ttf:fontcolor=blue@0.5:"
-                                        "fontsize=100:x=200:y=500:box=1: boxcolor=red@0.2:text='Hello,this is init text'";
-    const char *filter_descr_drawtext = "movie=coverr3.mp4[logo];[in][logo]overlay=x=400:y=500[out]";
+int FilterVideo::init_filtering_drawtext(char *args, char *fontfile, char *fontcolor, int fontsize, int box,
+                                         char *boxcolor, char *text, int x, int y) {
+
+    char filter_descr_drawtext[512];
+    snprintf(filter_descr_drawtext, sizeof(filter_descr_drawtext),
+             "drawtext=fontfile=%s:fontcolor=%s:fontsize=%d:box=%d:boxcolor=%s:text=%s:x=%d:y=%d",
+             fontfile, fontcolor, fontsize, box, boxcolor, text, x, y);
+
+    printf("%s\n", filter_descr_drawtext);
+//    const char *filter_descr_drawtext = "drawtext=fontfile=FreeSans.ttf:fontcolor=blue@0.5:"
+//                                        "fontsize=100:x=200:y=500:box=1: boxcolor=red@0.2:text='Hello,this is init text'";
+
+    //const char *filter_descr_drawtext = "movie=coverr3.mp4[logo];[in][logo]overlay=x=400:y=500[out]";
     if (this->init_filters(filter_descr_drawtext, args) < 0)
         return 1;
     return 0;
 }
 
-int FilterVideo::update_filters_drawtext() {
-    char *target = "overlay";
+int FilterVideo::update_filters_drawtext(char *arg) {
+    char *target = "drawtext";
     char *cmd = "reinit";
     //char *arg = "fontsize=56:fontcolor=blue@0.7:text=update hello";
     //char *arg = "text=update hello";
-    char *arg = "x=500:y=600";
+    //char *arg = "x=500:y=600";
     char res[512];
     int ret = 0;
-    ret = avfilter_graph_send_command(this->filter_graph,target,cmd,arg,res,512,1);
+    ret = avfilter_graph_send_command(this->filter_graph, target, cmd, arg, res, 512, 1);
     return ret;
 }
 
@@ -120,4 +129,8 @@ AVFrame *FilterVideo::filtering_drawtext(AVFrame *frame) {
     av_buffersink_get_frame(this->buffersink_ctx, filt_frame);
 
     return filt_frame;
+}
+
+int FilterVideo::init_filtering_crop(char *args, char *filter_type, char *iw, char *ih) {
+
 }

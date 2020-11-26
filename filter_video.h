@@ -20,9 +20,12 @@ public:
 //
 //    ~FilterVideo();
 
-    int init_filtering_drawtext(char *args);
+    int init_filtering_drawtext(char *args, char *fontfile = "FreeSans", char *fontcolor = "blue@0.5", int fontsize = 100, int box = 1,
+                                char *boxcolor = "red@0.5", char *text = "hello", int x = 10, int y = 10);
 
-    int update_filters_drawtext();
+    int update_filters_drawtext(char *arg);
+
+    int init_filtering_crop(char *args, char *filter_type, char *iw, char *ih);
 
     AVFrame *filtering_drawtext(AVFrame *frame);
 
