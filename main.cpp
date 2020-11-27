@@ -6,6 +6,7 @@ extern "C"
 #include "libavutil/imgutils.h"
 #include <libavutil/opt.h>
 }
+
 #include "filter_video.h"
 #include <iostream>
 
@@ -66,12 +67,13 @@ static void write_frame(const AVFrame *frame) {
 
 int main(int argc, char **argv) {
 
-    char input_file[] = "coverr2.mp4";
+    char input_file[] = "testvideo_1.mp4";
     cout << "input file: " << input_file << endl;
 
     FilterVideo filter_drawtext;
+    FilterVideo filter_add_picture;
+    FilterVideo filter_xfade;
     FilterVideo filter_scale;
-
 
     int ret;
     AVPacket packet;
@@ -93,26 +95,46 @@ int main(int argc, char **argv) {
     /* buffer video source: the decoded frames from the decoder will be inserted here. */
     snprintf(args, sizeof(args),
              "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d",
-             dec_ctx->width, dec_ctx->height, dec_ctx->pix_fmt,
-             time_base.num, time_base.den,
+             dec_ctx->width, dec_ctx->height, dec_ctx->pix_fmt, time_base.num, time_base.den,
              dec_ctx->sample_aspect_ratio.num, dec_ctx->sample_aspect_ratio.den);
 
+    if ((ret = filter_drawtext.init_filter_drawtext(args, "FreeSansFreeSans.ttf", "blue@0.5", 100,
+                                                    1, "red@0.5", "this is word", 10, 10)) >= 0) {
+        cout << "init filter drawtext successful" << endl;
+    };
 
-    if ((ret = filter_drawtext.init_filtering_drawtext(args,"FreeSansFreeSans.ttf", "blue@0.5", 100, 1,"red@0.5", "this is word", 10, 10)) >= 0) {
-        cout << "init filtering drawtext successful" << endl;
+    if ((ret = filter_add_picture.init_filter_add_picture(args, "firefox-developer-icon.png", 500, 100)) >= 0) {
+        cout << "init filter add picture successful" << endl;
+    };
+
+    if ((ret = filter_xfade.init_filter_xfade(args, "testvideo_1.mp4", "fade", 2, 5)) >= 0) {
+        cout << "init filter xfade successful" << endl;
+    };
+
+    if ((ret = filter_scale.init_filter_scale(args, 1280, 720)) >= 0) {
+        cout << "init filter scale successful" << endl;
     };
 
     int frame_count = 0;
     while (1) {
         frame_count++;
-        if (frame_count > 100) {
-            if ((ret = filter_drawtext.update_filters_drawtext("text=update text")) >= 0) {
-                cout << "update filtering drawtext successful" << endl;
+        if (frame_count == 200) {
+            if ((ret = filter_drawtext.update_filter_drawtext_text("update text")) >= 0) {
+                cout << "update filter drawtext text successful" << endl;
             } else {
-                cout << "update filtering drawtext failed" << endl;
+                cout << "update filter drawtext text failed" << endl;
+            }
+            //frame_count = 0;
+        }
+        if (frame_count == 500) {
+            if ((ret = filter_drawtext.update_filter_drawtext_x_y(300, 600)) >= 0) {
+                cout << "update filtering drawtext x y successful" << endl;
+            } else {
+                cout << "update filtering drawtext x y failed" << endl;
             }
             frame_count = 0;
         }
+
         if ((ret = av_read_frame(fmt_ctx, &packet)) < 0)
             break;
 
@@ -129,10 +151,16 @@ int main(int argc, char **argv) {
 
                 //filter_1
                 //filt_frame = filter_drawtext.filtering_drawtext(frame);
-                frame = filter_drawtext.filtering_drawtext(frame);
+                //frame = filter_drawtext.filter_operate(frame);
 
                 //filter_2
+                //frame = filter_add_picture.filter_operate(frame);
 
+                //filter_3
+                frame = filter_xfade.filter_operate(frame);
+
+                //filter_4
+                //frame = filter_scale.filter_operate(frame);
 
                 write_frame(frame);
                 av_frame_unref(filt_frame);
@@ -150,7 +178,8 @@ int main(int argc, char **argv) {
 
     fclose(file_fd);
 
-    cout << "Press any key to exit..." << endl;
-    getwchar();
+    cout << "finish" << endl;
+//    cout << "Press any key to exit..." << endl;
+//    getwchar();
     return 0;
 }

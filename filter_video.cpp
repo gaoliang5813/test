@@ -5,14 +5,15 @@
 //缩放滤镜，以下命令将视频缩小一半,iw,ih指的是输入的视频宽和高，
 //此外也可以直接使用数字知名缩放的大小，比如:scale=200:100
 //const char *filter_descr = "scale=iw/2:ih/2";
-/*裁剪滤镜，一下命令将视频的左上角的四分之一裁剪下来*/
+//裁剪滤镜，一下命令将视频的左上角的四分之一裁剪下来
 //const char *filter_descr = "crop=iw/2:ih/2:0:0";
-/*添加字符串水印*/
-//const char *filter_descr = "drawtext=fontfile=FreeSans.ttf:fontcolor=blue@0.2:fontsize=90:x=200:y=500:box=1: boxcolor=red@0.2:text='Hello,world'";
+//添加字符串水印
+//const char *filter_descr = "drawtext=fontfile=FreeSans.ttf:fontcolor=blue@0.2:fontsize=90:x=200:y=500:
+//                            box=1: boxcolor=red@0.2:text='Hello,world'";
 //画中画
-//const char *filter_descr = "movie=coverr2.mp4[wm];[in][wm]overlay=100:200[out]";
+//const char *filter_descr = "movie=coverr2.mp4[wm];[in][wm]overlay=x=400:y=500[out]";
 
-int FilterVideo::init_filters(const char *filters_descr, char *args) {
+int FilterVideo::init_filter(const char *filters_descr, char *args) {
     int ret = 0;
     const AVFilter *buffersrc = avfilter_get_by_name("buffer");
     const AVFilter *buffersink = avfilter_get_by_name("buffersink");
@@ -89,48 +90,88 @@ int FilterVideo::init_filters(const char *filters_descr, char *args) {
     return ret;
 }
 
-int FilterVideo::init_filtering_drawtext(char *args, char *fontfile, char *fontcolor, int fontsize, int box,
-                                         char *boxcolor, char *text, int x, int y) {
-
-    char filter_descr_drawtext[512];
-    snprintf(filter_descr_drawtext, sizeof(filter_descr_drawtext),
-             "drawtext=fontfile=%s:fontcolor=%s:fontsize=%d:box=%d:boxcolor=%s:text=%s:x=%d:y=%d",
-             fontfile, fontcolor, fontsize, box, boxcolor, text, x, y);
-
-    printf("%s\n", filter_descr_drawtext);
-//    const char *filter_descr_drawtext = "drawtext=fontfile=FreeSans.ttf:fontcolor=blue@0.5:"
-//                                        "fontsize=100:x=200:y=500:box=1: boxcolor=red@0.2:text='Hello,this is init text'";
-
-    //const char *filter_descr_drawtext = "movie=coverr3.mp4[logo];[in][logo]overlay=x=400:y=500[out]";
-    if (this->init_filters(filter_descr_drawtext, args) < 0)
-        return 1;
-    return 0;
-}
-
-int FilterVideo::update_filters_drawtext(char *arg) {
-    char *target = "drawtext";
-    char *cmd = "reinit";
-    //char *arg = "fontsize=56:fontcolor=blue@0.7:text=update hello";
-    //char *arg = "text=update hello";
-    //char *arg = "x=500:y=600";
-    char res[512];
-    int ret = 0;
-    ret = avfilter_graph_send_command(this->filter_graph, target, cmd, arg, res, 512, 1);
-    return ret;
-}
-
-AVFrame *FilterVideo::filtering_drawtext(AVFrame *frame) {
+AVFrame *FilterVideo::filter_operate(AVFrame *frame) {
     AVFrame *filt_frame = av_frame_alloc();
     /* push the decoded frame into the filtergraph */
     if (av_buffersrc_add_frame_flags(this->buffersrc_ctx, frame, AV_BUFFERSRC_FLAG_KEEP_REF) < 0) {
         av_log(NULL, AV_LOG_ERROR, "Error while feeding the filtergraph\n");
-        //return -1;
+        return NULL;
     }
     av_buffersink_get_frame(this->buffersink_ctx, filt_frame);
 
     return filt_frame;
 }
 
-int FilterVideo::init_filtering_crop(char *args, char *filter_type, char *iw, char *ih) {
+int FilterVideo::init_filter_drawtext(char *args, char *fontfile, char *fontcolor, int fontsize, int box,
+                                      char *boxcolor, char *text, int x, int y) {
+    char filter_descr[512];
+    snprintf(filter_descr, sizeof(filter_descr),
+             "drawtext=fontfile=%s:fontcolor=%s:fontsize=%d:box=%d:boxcolor=%s:text=%s:x=%d:y=%d",
+             fontfile, fontcolor, fontsize, box, boxcolor, text, x, y);
+    if (this->init_filter(filter_descr, args) < 0)
+        return -1;
+    return 0;
+}
 
+int FilterVideo::update_filter_drawtext_text(char *text) {
+    const char *target = "drawtext";
+    const char *cmd = "reinit";
+    char arg[512];
+    snprintf(arg, sizeof(arg), "text=%s", text);
+    char res[512];
+    int ret = 0;
+    ret = avfilter_graph_send_command(this->filter_graph, target, cmd, arg, res, 512, 1);
+    return ret;
+}
+
+int FilterVideo::update_filter_drawtext_x_y(int x, int y) {
+    const char *target = "drawtext";
+    const char *cmd = "reinit";
+    char arg[512];
+    snprintf(arg, sizeof(arg), "x=%d:y=%d", x, y);
+    char res[512];
+    int ret = 0;
+    ret = avfilter_graph_send_command(this->filter_graph, target, cmd, arg, res, 512, 1);
+    return ret;
+}
+
+int FilterVideo::init_filter_crop(char *args, char *iw, char *ih, int x, int y) {
+    char filter_descr[512];
+    snprintf(filter_descr, sizeof(filter_descr), "crop=%s:%s:%d:%d", iw, ih, x, y);
+    if (init_filter(filter_descr, args) < 0)
+        return -1;
+    return 0;
+}
+
+int FilterVideo::init_filter_scale(char *args, char *iw, char *ih) {
+    char filter_descr[512];
+    snprintf(filter_descr, sizeof(filter_descr), "scale=%s:%s", iw, ih);
+    if (init_filter(filter_descr, args) < 0)
+        return -1;
+    return 0;
+}
+
+int FilterVideo::init_filter_scale(char *args, int w, int h) {
+    char filter_descr[512];
+    snprintf(filter_descr, sizeof(filter_descr), "scale=%d:%d", w, h);
+    if (init_filter(filter_descr, args) < 0)
+        return -1;
+    return 0;
+}
+
+int FilterVideo::init_filter_add_picture(char *args, char *picturename, int x, int y) {
+    char filter_descr[512];
+    snprintf(filter_descr, sizeof(filter_descr), "movie=%s[wm];[in][wm]overlay=x=%d:y=%d[out]", picturename, x, y);
+    if (init_filter(filter_descr, args) < 0)
+        return -1;
+    return 0;
+}
+
+int FilterVideo::init_filter_xfade(char *args, char *moviename, char *transition_type, int duration, int offset) {
+    char filter_descr[512];
+    snprintf(filter_descr, sizeof(filter_descr), "movie=%s[wm];[in][wm]xfade=transition=%s:duration=%d:offset=%d[out]",
+             moviename, transition_type, duration, offset);
+    if (init_filter(filter_descr, args) < 0)
+        return -1;
+    return 0;
 }
