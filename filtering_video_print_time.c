@@ -20,7 +20,8 @@
 //const char *filter_descr = "crop=iw/2:ih/2:0:0";
 /*添加字符串水印*/
 //const char *filter_descr = "drawtext=fontfile=FreeSans.ttf:fontcolor=blue@0.2:fontsize=90:x=200:y=500:box=1: boxcolor=red@0.2:text='Hello,world'";
-const char *filter_descr = "movie=coverr2.mp4[wm];[in][wm]overlay=100:200[out]";
+const char *filter_descr = "movie=testvideo_1.mp4[wm];[in][wm]overlay=100:200[out]";
+
 
 static AVFormatContext *fmt_ctx;
 static AVCodecContext *dec_ctx;
@@ -30,19 +31,34 @@ AVFilterGraph *filter_graph;
 static int video_stream_index = -1;
 static int64_t last_pts = AV_NOPTS_VALUE;
 
+
+
 static int open_input_file(const char *filename) {
     int ret;
     AVCodec *dec;
+
+    double time = clock();
+    double cost_time = 0;
 
     if ((ret = avformat_open_input(&fmt_ctx, filename, NULL, NULL)) < 0) {
         av_log(NULL, AV_LOG_ERROR, "Cannot open input file\n");
         return ret;
     }
 
+    time = clock() - time;   //时间间隔
+    cost_time = 1000 * (double) time / CLOCKS_PER_SEC;
+    printf("avformat_open_input time: %f ms\n", cost_time);
+    time = clock();
+
     if ((ret = avformat_find_stream_info(fmt_ctx, NULL)) < 0) {
         av_log(NULL, AV_LOG_ERROR, "Cannot find stream information\n");
         return ret;
     }
+
+    time = clock() - time;   //时间间隔
+    cost_time = 1000 * (double) time / CLOCKS_PER_SEC;
+    printf("avformat_find_stream_info time: %f ms\n", cost_time);
+    time = clock();
 
     /* select the video stream */
     ret = av_find_best_stream(fmt_ctx, AVMEDIA_TYPE_VIDEO, -1, -1, &dec, 0);
@@ -50,6 +66,12 @@ static int open_input_file(const char *filename) {
         av_log(NULL, AV_LOG_ERROR, "Cannot find a video stream in the input file\n");
         return ret;
     }
+
+    time = clock() - time;   //时间间隔
+    cost_time = 1000 * (double) time / CLOCKS_PER_SEC;
+    printf("av_find_best_stream time: %f ms\n", cost_time);
+    time = clock();
+
     video_stream_index = ret;
     dec_ctx = fmt_ctx->streams[video_stream_index]->codec;
     av_opt_set_int(dec_ctx, "refcounted_frames", 1, 0);
@@ -60,10 +82,19 @@ static int open_input_file(const char *filename) {
         return ret;
     }
 
+    time = clock() - time;   //时间间隔
+    cost_time = 1000 * (double) time / CLOCKS_PER_SEC;
+    printf("avcodec_open2 time: %f ms\n", cost_time);
+    time = clock();
+
     return 0;
 }
 
 static int init_filters(const char *filters_descr) {
+    double time = clock();
+    double cost_time = 0;
+
+
     char args[512];
     int ret = 0;
     AVFilter *buffersrc = avfilter_get_by_name("buffer");
@@ -146,6 +177,12 @@ static int init_filters(const char *filters_descr) {
     avfilter_inout_free(&inputs);
     avfilter_inout_free(&outputs);
 
+
+    time = clock() - time;   //时间间隔
+    cost_time = 1000 * (double) time / CLOCKS_PER_SEC;
+    printf("init_filters time: %f ms\n", cost_time);
+    time = clock();
+
     return ret;
 }
 
@@ -170,7 +207,10 @@ static void write_frame(const AVFrame *frame) {
 }
 
 int filtering_video(char *filename) {
-    clock_t time;
+
+    double time = clock();
+    double cost_time = 0;
+
     time = clock();//开始时间
 
     //std::cout<<"time = "<<1000*double(end-start)/CLOCKS_PER_SEC<<"ms"<<std::endl;
@@ -192,11 +232,6 @@ int filtering_video(char *filename) {
         goto end;
     if ((ret = init_filters(filter_descr)) < 0)
         goto end;
-
-    time = clock() - time;   //时间间隔
-    double cost_time = 1000 * (double) time / CLOCKS_PER_SEC;
-    time = clock();
-    printf("init costs time: %f ms\n", cost_time);
 
     /* read all packets */
     while (1) {
@@ -271,4 +306,8 @@ int filtering_video(char *filename) {
     }
     fclose(file_fd);
     exit(0);
+}
+int main(int argc, char **argv) {
+    freopen("./out.txt","w",stdout);
+    filtering_video("testvideo_1.mp4");
 }
