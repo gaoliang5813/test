@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 project( main )
 
-#add_executable( main main.cpp)
-add_executable( main main.cpp filter_video.cpp)
+add_executable( main filter_video_combine.cpp)
+#add_executable( main main.cpp filter_video.cpp)
 
 target_link_libraries(main avcodec avformat avdevice avutil avfilter swscale postproc swresample)
