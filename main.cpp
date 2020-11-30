@@ -4,6 +4,7 @@ extern "C"
 #include "libavformat/avformat.h"
 #include "libswscale/swscale.h"
 #include "libavutil/imgutils.h"
+#include "libavdevice/avdevice.h"
 #include <libavutil/opt.h>
 }
 
@@ -21,12 +22,17 @@ static int open_input_file(const char *filename) {
     AVCodec *dec;
 
     //dev
+  	avdevice_register_all();
     AVDictionary* options = NULL;
     const char* input_format_name = "video4linux2";
     const char* url = "/dev/video0";
-    av_dict_set(&options, "video_size", "640x480", 0);
+    av_dict_set(&options, "video_size", "1920x1080", 0);
     av_dict_set(&options, "input_format", "mjpeg", 0);
     AVInputFormat* input_fmt = av_find_input_format(input_format_name);
+    if (input_fmt == NULL) {
+		printf("can not find_input_format\n");
+		return -1;
+  	}
     AVFormatContext* format_ctx = avformat_alloc_context();
 
     if ((ret = avformat_open_input(&fmt_ctx, url, input_fmt, &options)) < 0) {
@@ -117,7 +123,7 @@ int main(int argc, char **argv) {
         cout << "init filter drawtext successful" << endl;
     };
 
-    if ((ret = filter_add_picture.init_filter_add_picture(args, "firefox-developer-icon.png", 500, 100)) >= 0) {
+    if ((ret = filter_add_picture.init_filter_add_picture(args, "my_logo.png", 500, 100)) >= 0) {
         cout << "init filter add picture successful" << endl;
     };
 
@@ -131,6 +137,11 @@ int main(int argc, char **argv) {
 
     int frame_count = 0;
     while (1) {
+
+      if(frame_count>200){
+        break;
+      }
+
         frame_count++;
         if (frame_count == 200) {
             if ((ret = filter_drawtext.update_filter_drawtext_text("update text")) >= 0) {
@@ -165,13 +176,13 @@ int main(int argc, char **argv) {
 
                 //filter_1
                 //filt_frame = filter_drawtext.filtering_drawtext(frame);
-                //frame = filter_drawtext.filter_operate(frame);
+                frame = filter_drawtext.filter_operate(frame);
 
                 //filter_2
-                //frame = filter_add_picture.filter_operate(frame);
+                frame = filter_add_picture.filter_operate(frame);
 
                 //filter_3
-                frame = filter_xfade.filter_operate(frame);
+                //frame = filter_xfade.filter_operate(frame);
 
                 //filter_4
                 //frame = filter_scale.filter_operate(frame);
