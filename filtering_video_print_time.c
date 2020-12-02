@@ -12,6 +12,7 @@
 
 //#include <stdlib.h>
 #include <time.h>
+#include "calctime.h"
 
 //缩放滤镜，以下命令将视频缩小一半,iw,ih指的是输入的视频宽和高，
 //此外也可以直接使用数字知名缩放的大小，比如:scale=200:100
@@ -44,22 +45,14 @@ static int open_input_file(const char *filename) {
         av_log(NULL, AV_LOG_ERROR, "Cannot open input file\n");
         return ret;
     }
-
-    time = clock() - time;   //时间间隔
-    cost_time = 1000 * (double) time / CLOCKS_PER_SEC;
-    printf("avformat_open_input time: %f ms\n", cost_time);
-    time = clock();
+    add_debug_log("avformat_open_input time: ");
 
     if ((ret = avformat_find_stream_info(fmt_ctx, NULL)) < 0) {
         av_log(NULL, AV_LOG_ERROR, "Cannot find stream information\n");
         return ret;
     }
 
-    time = clock() - time;   //时间间隔
-    cost_time = 1000 * (double) time / CLOCKS_PER_SEC;
-    printf("avformat_find_stream_info time: %f ms\n", cost_time);
-    time = clock();
-
+    add_debug_log("avformat_find_stream_info time: ");
     /* select the video stream */
     ret = av_find_best_stream(fmt_ctx, AVMEDIA_TYPE_VIDEO, -1, -1, &dec, 0);
     if (ret < 0) {
@@ -67,10 +60,7 @@ static int open_input_file(const char *filename) {
         return ret;
     }
 
-    time = clock() - time;   //时间间隔
-    cost_time = 1000 * (double) time / CLOCKS_PER_SEC;
-    printf("av_find_best_stream time: %f ms\n", cost_time);
-    time = clock();
+    add_debug_log("av_find_best_stream time: ");
 
     video_stream_index = ret;
     dec_ctx = fmt_ctx->streams[video_stream_index]->codec;
@@ -82,11 +72,7 @@ static int open_input_file(const char *filename) {
         return ret;
     }
 
-    time = clock() - time;   //时间间隔
-    cost_time = 1000 * (double) time / CLOCKS_PER_SEC;
-    printf("avcodec_open2 time: %f ms\n", cost_time);
-    time = clock();
-
+    add_debug_log("avcodec_open2 time: ");
     return 0;
 }
 
@@ -177,11 +163,7 @@ static int init_filters(const char *filters_descr) {
     avfilter_inout_free(&inputs);
     avfilter_inout_free(&outputs);
 
-
-    time = clock() - time;   //时间间隔
-    cost_time = 1000 * (double) time / CLOCKS_PER_SEC;
-    printf("init_filters time: %f ms\n", cost_time);
-    time = clock();
+    add_debug_log("init_filters time: ");
 
     return ret;
 }
@@ -237,11 +219,8 @@ int filtering_video(char *filename) {
     while (1) {
         if ((ret = av_read_frame(fmt_ctx, &packet)) < 0)
             break;
-        time = clock() - time;   //时间间隔
-        cost_time = 1000 * (double) time / CLOCKS_PER_SEC;
-        time = clock();
-        printf("read_frame costs time: %f ms\n", cost_time);
 
+        add_debug_log("read_frame costs time:");
         if (packet.stream_index == video_stream_index) {
             got_frame = 0;
             ret = avcodec_decode_video2(dec_ctx, frame, &got_frame, &packet);
@@ -249,26 +228,19 @@ int filtering_video(char *filename) {
                 av_log(NULL, AV_LOG_ERROR, "Error decoding video\n");
                 break;
             }
-            time = clock() - time;   //时间间隔
-            cost_time = 1000 * (double) time / CLOCKS_PER_SEC;
-            time = clock();
-            printf("avcodec_decode_video2 costs time: %f ms\n", cost_time);
+            add_debug_log("avcodec_decode_video2 costs time:");
 
             if (got_frame) {
                 frame->pts = av_frame_get_best_effort_timestamp(frame);
-                time = clock() - time;   //时间间隔
-                cost_time = 1000 * (double) time / CLOCKS_PER_SEC;
-                time = clock();
-                printf("av_frame_get_best_effort_timestamp costs time: %f ms\n", cost_time);
+
+                add_debug_log("av_frame_get_best_effort_timestamp costs time:");
+
                 /* push the decoded frame into the filtergraph */
                 if (av_buffersrc_add_frame_flags(buffersrc_ctx, frame, AV_BUFFERSRC_FLAG_KEEP_REF) < 0) {
                     av_log(NULL, AV_LOG_ERROR, "Error while feeding the filtergraph\n");
                     break;
                 }
-                time = clock() - time;   //时间间隔
-                cost_time = 1000 * (double) time / CLOCKS_PER_SEC;
-                time = clock();
-                printf("push the decoded frame into the filtergraph costs time: %f ms\n", cost_time);
+                add_debug_log("push the decoded frame into the filtergraph costs time:");
                 /* pull filtered frames from the filtergraph */
                 while (1) {
                     ret = av_buffersink_get_frame(buffersink_ctx, filt_frame);
@@ -276,17 +248,13 @@ int filtering_video(char *filename) {
                         break;
                     if (ret < 0)
                         goto end;
-                    time = clock() - time;   //时间间隔
-                    cost_time = 1000 * (double) time / CLOCKS_PER_SEC;
-                    time = clock();
-                    printf("pull filtered frames from the filtergraph costs time: %f ms\n", cost_time);
+
+                    add_debug_log("pull filtered frames from the filtergraph costs time:");
+
                     write_frame(filt_frame);
                     av_frame_unref(filt_frame);
 
-                    time = clock() - time;   //时间间隔
-                    cost_time = 1000 * (double) time / CLOCKS_PER_SEC;
-                    time = clock();
-                    printf("write_frame costs time: %f ms\n", cost_time);
+                    add_debug_log("write_frame costs time:");
                 }
                 av_frame_unref(frame);
             }
