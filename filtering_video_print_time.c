@@ -276,6 +276,9 @@ int filtering_video(char *filename) {
     exit(0);
 }
 int main(int argc, char **argv) {
+    init_log();
     freopen("./out.txt","w",stdout);
     filtering_video("testvideo_1.mp4");
+    close_log();
+
 }
