@@ -871,12 +871,12 @@ int mult_video_up_down()
         return AVERROR(ENOMEM);
 
 
-    inputfiles[0].filenames = "in1.flv";
+    inputfiles[0].filenames = "testvideo.mp4";
     //inputfiles[0].video_expand = 0;
     inputfiles[0].video_idx = 0;
-    inputfiles[0].video_effect = VFX_EDGE;
+    inputfiles[0].video_effect = VFX_NULL;
     inputfiles[0].audio_effect = AFX_NULL;
-    inputfiles[1].filenames = "in2.flv";
+    inputfiles[1].filenames = "time.mp4";
     //inputfiles[1].video_expand = 0;
     inputfiles[1].video_idx = 1;
     inputfiles[1].video_effect = VFX_NULL;
