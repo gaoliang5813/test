@@ -1,0 +1,1 @@
+/usr/bin/c++     CMakeFiles/pullstream.dir/main.cpp.o CMakeFiles/pullstream.dir/mult_video.cpp.o CMakeFiles/pullstream.dir/filter_video.cpp.o  -o pullstream -lavcodec -lavformat -lavdevice -lavutil -lavfilter -lswscale -lpostproc -lswresample 
