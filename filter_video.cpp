@@ -24,14 +24,13 @@ extern "C"
 extern "C"
 {
 #endif
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-#include <libavfilter/avfiltergraph.h>
-#include <libavfilter/buffersink.h>
-#include <libavfilter/buffersrc.h>
-#include <libavutil/avutil.h>
-#include <libswscale/swscale.h>
-#include <SDL/SDL.h>
+#include "libavcodec/avcodec.h"
+#include "libavformat/avformat.h"
+#include "libavfilter/buffersink.h"
+#include "libavfilter/buffersrc.h"
+#include <libavutil/opt.h>
+#include "libswscale/swscale.h"
+#include "libavdevice/avdevice.h"
 #ifdef __cplusplus
 };
 #endif
@@ -88,7 +87,7 @@ static int open_input_file(const char *filename)
     return 0;
 }
 
-static int open_input_device(const char *filename) {
+static int open_input_device(const char *url) {
     int ret;
     AVCodec *dec;
 
@@ -96,9 +95,9 @@ static int open_input_device(const char *filename) {
     avdevice_register_all();
     AVDictionary* options = NULL;
     const char* input_format_name = "video4linux2";
-    const char* url = "/dev/video0";
-    av_dict_set(&options, "video_size", "1920x1080", 0);
-    av_dict_set(&options, "input_format", "mjpeg", 0);
+    //const char* url = "/dev/video0";
+    //av_dict_set(&options, "video_size", "1280x720", 0);
+    //av_dict_set(&options, "input_format", "mjpeg", 0);
     AVInputFormat* input_fmt = av_find_input_format(input_format_name);
     if (input_fmt == NULL) {
         printf("can not find_input_format\n");
@@ -147,8 +146,6 @@ static int init_filters(int filterFlag)
     char filter_descr[512];
     using namespace std;
 
-    //"movie=time.mp4[wm];[wm]scale=w=180:h=100[wm];[in][wm]overlay=0:0[out]";
-
     // 获取FFmpeg中定义的filter
     const AVFilter *buffersrc  = avfilter_get_by_name("buffer");
     const AVFilter *buffersink = avfilter_get_by_name("buffersink");
@@ -161,7 +158,8 @@ static int init_filters(int filterFlag)
     filter_graph = avfilter_graph_alloc();
     if (!outputs || !inputs || !filter_graph) {
         ret = AVERROR(ENOMEM);
-        goto end;
+        printf("avfilter_graph_alloc failed");
+        return 0;
     }
 
     /* buffer video source: the decoded frames from the decoder will be inserted here. */
@@ -176,7 +174,10 @@ static int init_filters(int filterFlag)
                                        args, NULL, filter_graph);
     if (ret < 0) {
         av_log(NULL, AV_LOG_ERROR, "Cannot create buffer source\n");
-        goto end;
+ 
+        avfilter_inout_free(&inputs);
+        avfilter_inout_free(&outputs);
+        return 0;
     }
 
     /* buffer video sink: to terminate the filter chain. */
@@ -184,14 +185,20 @@ static int init_filters(int filterFlag)
                                        NULL, NULL, filter_graph);
     if (ret < 0) {
         av_log(NULL, AV_LOG_ERROR, "Cannot create buffer sink\n");
-        goto end;
+
+        avfilter_inout_free(&inputs);
+        avfilter_inout_free(&outputs);
+        return 0;
     }
 
     ret = av_opt_set_int_list(buffersink_ctx, "pix_fmts", pix_fmts,
                               AV_PIX_FMT_NONE, AV_OPT_SEARCH_CHILDREN);
     if (ret < 0) {
         av_log(NULL, AV_LOG_ERROR, "Cannot set output pixel format\n");
-        goto end;
+
+        avfilter_inout_free(&inputs);
+        avfilter_inout_free(&outputs);
+        return 0;
     }
 
     /*
@@ -220,37 +227,43 @@ static int init_filters(int filterFlag)
     inputs->filter_ctx = buffersink_ctx;
     inputs->pad_idx    = 0;
     inputs->next       = NULL;
-    switch (filterFlag){
+
+     switch (filterFlag){
         case 1:
-        _snprintf(filter_descr, sizeof(filter_descr), "movie=time.mp4[wm];[wm]scale=w=%d:h=%d[wm];[in][wm]overlay=%d:%d[out]",pCodecCtx->width/2 ,pCodecCtx->height/2 ,0 ,0);
+            snprintf(filter_descr, sizeof(filter_descr), "movie=testvideo.mp4[wm];[wm]scale=w=%d:h=%d[wm];[in][wm]overlay=%d:%d[out]",pCodecCtx->width/2 ,pCodecCtx->height/2 ,0 ,0);
             break;
         case 2:
-            _snprintf(filter_descr, sizeof(filter_descr), "movie=time.mp4[wm];[wm]scale=w=%d:h=%d[wm];[in][wm]overlay=%d:%d[out]",pCodecCtx->width/2 ,pCodecCtx->height/2 ,pCodecCtx->width/2 ,0);
+            snprintf(filter_descr, sizeof(filter_descr), "movie=testvideo.mp4[wm];[wm]scale=w=%d:h=%d[wm];[in][wm]overlay=%d:%d[out]",pCodecCtx->width/2 ,pCodecCtx->height/2 ,pCodecCtx->width/2 ,0);
             break;
         case 3:
-            _snprintf(filter_descr, sizeof(filter_descr), "movie=time.mp4[wm];[wm]scale=w=%d:h=%d[wm];[in][wm]overlay=%d:%d[out]",pCodecCtx->width/2 ,pCodecCtx->height/2 ,0 ,pCodecCtx->height/2);
+            snprintf(filter_descr, sizeof(filter_descr), "movie=testvideo.mp4[wm];[wm]scale=w=%d:h=%d[wm];[in][wm]overlay=%d:%d[out]",pCodecCtx->width/2 ,pCodecCtx->height/2 ,0 ,pCodecCtx->height/2);
             break;
         case 4:
-            _snprintf(filter_descr, sizeof(filter_descr), "movie=time.mp4[wm];[wm]scale=w=%d:h=%d[wm];[in][wm]overlay=%d:%d[out]",pCodecCtx->width/2 ,pCodecCtx->height/2 ,pCodecCtx->width/2 ,pCodecCtx->height/2);
+            snprintf(filter_descr, sizeof(filter_descr), "movie=testvideo.mp4[wm];[wm]scale=w=%d:h=%d[wm];[in][wm]overlay=%d:%d[out]",pCodecCtx->width/2 ,pCodecCtx->height/2 ,pCodecCtx->width/2 ,pCodecCtx->height/2);
             break;
         default:
             break;
     }
 
     cout << filter_descr << endl;
-
     /* 将一串通过字符串描述的Graph添加到FilterGraph中。 */
     if ((ret = avfilter_graph_parse_ptr(filter_graph, filter_descr,
                                         &inputs, &outputs, NULL)) < 0)
-        goto end;
+        {
+        printf("avfilter_graph_parse_ptr failed");
+        avfilter_inout_free(&inputs);
+        avfilter_inout_free(&outputs);
+        return 0;
+        }
 
     /* 检查FilterGraph的配置 */
     if ((ret = avfilter_graph_config(filter_graph, NULL)) < 0)
-        goto end;
-
-    end:
-    avfilter_inout_free(&inputs);
-    avfilter_inout_free(&outputs);
+        {
+        printf("avfilter_graph_parse_ptr failed");
+        avfilter_inout_free(&inputs);
+        avfilter_inout_free(&outputs);
+        return 0;
+        }
 
     return ret;
 }
@@ -262,24 +275,29 @@ int filter_video(int filterFlag)
     AVPacket packet;
     AVFrame *pFrame;
     AVFrame *pFrame_out;
-    errno_t err;
+    using namespace std;
+    //errno_t err;
 
     //int got_frame = 1;
 
     /* 视频输入流（主视频） */
-    if ((ret = open_input_file(main_filename)) < 0)
-        goto end;
+    //if ((ret = open_input_file(main_filename)) < 0){
+    //    printf("Error open input file\n");
+    //    return 0;
+     // }
+    if ((ret = open_input_device("/dev/video2")) < 0){
+        printf("Error open input file\n");
+        return 0;
+      }
+    
     /* 初始化filter */
-    if ((ret = init_filters(filterFlag)) < 0)
-        goto end;
+    if ((ret = init_filters(filterFlag)) < 0){
+        printf("Error init filters \n");
+        return 0;
+      }
 
 #if ENABLE_YUVFILE
-    //FILE *fp_yuv=fopen("test.yuv","wb+");
-    FILE *fp_yuv;
-    err = fopen_s(&fp_yuv,"test.yuv","wb+");
-    if (err != 0){
-        printf("open file failed");
-    }
+    FILE *fp_yuv=fopen("test.yuv","wb+");
 #endif
 
     pFrame=av_frame_alloc();
@@ -322,8 +340,9 @@ int filter_video(int filterFlag)
                 }
                 //if (ret >= 0) {
                 /* 得到frame的pts */
-                //pFrame->pts = av_frame_get_best_effort_timestamp(pFrame);
+                pFrame->pts = av_frame_get_best_effort_timestamp(pFrame);
 
+                cout << "pts =  " << pFrame->pts <<endl;
                 /* push the decoded frame into the filtergraph */
                 if (av_buffersrc_add_frame_flags(buffersrc_ctx, pFrame,AV_BUFFERSRC_FLAG_KEEP_REF) < 0) {
                     printf( "Error while feeding the filtergraph\n");
@@ -339,6 +358,7 @@ int filter_video(int filterFlag)
 
                     printf("Process 1 frame!\n");
 
+                    printf("pFrame_out->height = %d,pFrame_out->width = %d\n",pFrame_out->height,pFrame_out->width);
                     /* 逐帧转存为yuv形式文件 */
                     if (pFrame_out->format==AV_PIX_FMT_YUV420P) {
 #if ENABLE_YUVFILE
@@ -372,19 +392,6 @@ int filter_video(int filterFlag)
     fclose(fp_yuv);
 #endif
 
-    end:
-    avfilter_graph_free(&filter_graph);
-    if (pCodecCtx)
-        avcodec_close(pCodecCtx);
-    avformat_close_input(&pFormatCtx);
-
-
-    if (ret < 0 && ret != AVERROR_EOF &&ret != AVERROR(EAGAIN)) {
-        char buf[1024];
-        av_strerror(ret, buf, sizeof(buf));
-        printf("Error occurred: %s\n", buf);
-        return -1;
-    }
 
     return 0;
 }
