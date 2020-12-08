@@ -172,7 +172,7 @@ static int open_input_device()
     avdevice_register_all();
     AVDictionary* options = NULL;
     const char* input_format_name = "video4linux2";
-    const char* url = "/dev/video2";
+    const char* url[2] = {"/dev/video0","/dev/video2"};
     av_dict_set(&options, "video_size", "1920x1080", 0);
     av_dict_set(&options, "input_format", "mjpeg", 0);
     AVInputFormat* input_fmt = av_find_input_format(input_format_name);
@@ -182,10 +182,10 @@ static int open_input_device()
     }
     
     //ifmt_ctx = (AVFormatContext**)av_malloc((global_ctx->video_num)*sizeof(AVFormatContext*));
-    for (i = 0; i < 1; i++)
+    for (i = 0; i < global_ctx->video_num; i++)
     {
         *(ifmt_ctx + i) = NULL;
-        if ((ret = avformat_open_input((ifmt_ctx + i), url, input_fmt, &options)) < 0) {
+        if ((ret = avformat_open_input((ifmt_ctx + i), url[i], input_fmt, &options)) < 0) {
             av_log(NULL, AV_LOG_ERROR, "Cannot open input file\n");
             return ret;
         }
@@ -210,7 +210,7 @@ static int open_input_device()
                 }
             }
         }
-        av_dump_format(ifmt_ctx[i], 0, url, 0);
+        av_dump_format(ifmt_ctx[i], 0, url[i], 0);
     }
     return 0;
 }
@@ -306,6 +306,118 @@ static int open_output_file(const char *filename)
         ret = avio_open(&ofmt_ctx->pb, filename, AVIO_FLAG_WRITE);
         if (ret < 0) {
             av_log(NULL, AV_LOG_ERROR, "Could not open output file '%s'", filename);
+            return ret;
+        }
+    }
+    /* init muxer, write output file header */
+    ret = avformat_write_header(ofmt_ctx, NULL);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Error occurred when opening output file\n");
+        return ret;
+    }
+
+#if USE_H264BSF
+    h264bsfc = av_bitstream_filter_init("h264_mp4toannexb");
+#endif
+#if USE_AACBSF
+    aacbsfc = av_bitstream_filter_init("aac_adtstoasc");
+#endif
+
+    return 0;
+}
+
+static int open_output_device()
+{
+    AVStream *out_stream;
+    AVStream *in_stream;
+    AVCodecContext *dec_ctx, *enc_ctx;
+    AVCodec *encoder;
+    int ret;
+    unsigned int i;
+    ofmt_ctx = NULL;
+    const char* outUrl ="rtmp://10.9.9.125/live/a-4";
+    avformat_alloc_output_context2(&ofmt_ctx, NULL, "flv", outUrl);
+    if (!ofmt_ctx) {
+        av_log(NULL, AV_LOG_ERROR, "Could not create output context\n");
+        return AVERROR_UNKNOWN;
+    }
+    for (i = 0; i < ifmt_ctx[0]->nb_streams; i++) {
+        out_stream = avformat_new_stream(ofmt_ctx, NULL);
+        if (!out_stream) {
+            av_log(NULL, AV_LOG_ERROR, "Failed allocating output stream\n");
+            return AVERROR_UNKNOWN;
+        }
+        in_stream = ifmt_ctx[0]->streams[i];
+        out_stream->time_base = in_stream->time_base;
+
+        dec_ctx = in_stream->codec;
+        enc_ctx = out_stream->codec;
+        if (dec_ctx->codec_type == AVMEDIA_TYPE_VIDEO
+            || dec_ctx->codec_type == AVMEDIA_TYPE_AUDIO) {
+            /* In this example, we transcode to same properties (picture size,
+            * sample rate etc.). These properties can be changed for output
+            * streams easily using filters */
+            if (dec_ctx->codec_type == AVMEDIA_TYPE_VIDEO) {
+                /* in this example, we choose transcoding to same codec */
+                encoder = avcodec_find_encoder(AV_CODEC_ID_H264);
+                enc_ctx->height = global_ctx->enc_height;
+                enc_ctx->width = global_ctx->enc_width;
+                enc_ctx->sample_aspect_ratio = dec_ctx->sample_aspect_ratio;
+                /* take first format from list of supported formats */
+                enc_ctx->pix_fmt = encoder->pix_fmts[0];
+                enc_ctx->me_range = 16;
+                enc_ctx->max_qdiff = 4;
+                enc_ctx->bit_rate = global_ctx->enc_bit_rate;
+                enc_ctx->qcompress = 0.6;
+                /* video time_base can be set to whatever is handy and supported by encoder */
+                enc_ctx->time_base.num = 1;
+                enc_ctx->time_base.den = 25;
+                enc_ctx->gop_size = 250;
+                enc_ctx->max_b_frames = 3;
+
+                AVDictionary * d = NULL;
+                char *k = av_strdup("preset");       // if your strings are already allocated,
+                char *v = av_strdup("ultrafast");    // you can avoid copying them like this
+                av_dict_set(&d, k, v, AV_DICT_DONT_STRDUP_KEY | AV_DICT_DONT_STRDUP_VAL);
+                ret = avcodec_open2(enc_ctx, encoder, &d);
+            }
+            else {
+                encoder = avcodec_find_encoder(AV_CODEC_ID_AAC);
+                enc_ctx->sample_rate = dec_ctx->sample_rate;
+                enc_ctx->channel_layout = dec_ctx->channel_layout;
+                enc_ctx->channels = av_get_channel_layout_nb_channels(enc_ctx->channel_layout);
+                /* take first format from list of supported formats */
+                enc_ctx->sample_fmt = encoder->sample_fmts[0];
+                AVRational time_base = { 1, enc_ctx->sample_rate };
+                enc_ctx->time_base = time_base;
+                ret = avcodec_open2(enc_ctx, encoder, NULL);
+            }
+            if (ret < 0) {
+                av_log(NULL, AV_LOG_ERROR, "Cannot open video encoder for stream #%u\n", i);
+                return ret;
+            }
+        }
+        else if (dec_ctx->codec_type == AVMEDIA_TYPE_UNKNOWN) {
+            av_log(NULL, AV_LOG_FATAL, "Elementary stream #%d is of unknown type, cannot proceed\n", i);
+            return AVERROR_INVALIDDATA;
+        }
+        else {
+            /* if this stream must be remuxed */
+            ret = avcodec_copy_context(ofmt_ctx->streams[i]->codec,
+                                       ifmt_ctx[0]->streams[i]->codec);
+            if (ret < 0) {
+                av_log(NULL, AV_LOG_ERROR, "Copying stream context failed\n");
+                return ret;
+            }
+        }
+        if (ofmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
+            enc_ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+    }
+    av_dump_format(ofmt_ctx, 0, outUrl, 1);
+    if (!(ofmt_ctx->oformat->flags & AVFMT_NOFILE)) {
+        ret = avio_open(&ofmt_ctx->pb, outUrl, AVIO_FLAG_WRITE);
+        if (ret < 0) {
+            av_log(NULL, AV_LOG_ERROR, "Could not open output file '%s'", outUrl);
             return ret;
         }
     }
@@ -571,6 +683,26 @@ static int init_spec_filter(int flag)
                                   "[ine%d]scale=w=%d:h=%d[inn%d];[x%d][inn%d]overlay=%d*%d/%d+%d:%d*%d/%d[x%d];", j,
                                   global_ctx->enc_width / stride, global_ctx->enc_height / stride, j, k - 1, j,
                                   global_ctx->enc_width, y_coor, stride, global_ctx->enc_width/4, global_ctx->enc_height, x_coor, stride, k);
+                    }else if(flag == 5) {
+                        snprintf(spec_temp, sizeof(spec_temp),
+                                 "[ine%d]scale=w=%d:h=%d[inn%d];[x%d][inn%d]overlay=%d*%d/%d:%d*%d/%d[x%d];", j,
+                                 (global_ctx->enc_width)*j / stride, (global_ctx->enc_height)*j / stride, j, k - 1, j,
+                                 global_ctx->enc_width, 0, stride, global_ctx->enc_height, 0, stride, k);
+                    }else if(flag == 6) {
+                        snprintf(spec_temp, sizeof(spec_temp),
+                                 "[ine%d]scale=w=%d:h=%d[inn%d];[x%d][inn%d]overlay=%d*%d/%d:%d*%d/%d[x%d];", j,
+                                 (global_ctx->enc_width)*j / stride, (global_ctx->enc_height)*j / stride, j, k - 1, j,
+                                 global_ctx->enc_width, j, stride, global_ctx->enc_height, 0, stride, k);
+                    }else if(flag == 7) {
+                        snprintf(spec_temp, sizeof(spec_temp),
+                                 "[ine%d]scale=w=%d:h=%d[inn%d];[x%d][inn%d]overlay=%d*%d/%d:%d*%d/%d[x%d];", j,
+                                 (global_ctx->enc_width)*j / stride, (global_ctx->enc_height)*j / stride, j, k - 1, j,
+                                 global_ctx->enc_width, 0, stride, global_ctx->enc_height, j, stride, k);
+                    }else if(flag == 8) {
+                        snprintf(spec_temp, sizeof(spec_temp),
+                                 "[ine%d]scale=w=%d:h=%d[inn%d];[x%d][inn%d]overlay=%d*%d/%d:%d*%d/%d[x%d];", j,
+                                 (global_ctx->enc_width)*j / stride, (global_ctx->enc_height)*j / stride, j, k - 1, j,
+                                 global_ctx->enc_width, j, stride, global_ctx->enc_height, j, stride, k);
                     }
                     k++;
                     strcat(filter_spec, spec_temp);
@@ -628,7 +760,9 @@ int videocombine(GlobalContext* video_ctx,int flag)
     int(*dec_func)(AVCodecContext *, AVFrame *, int *, const AVPacket *);
     int(*enc_func)(AVCodecContext *, AVPacket *, const AVFrame *, int *);
     int tempPts;
-    int m=4;
+    int tempPts1;
+    int tempPts2;
+    int m=0;
 
     global_ctx = video_ctx;
     global_ctx_config();
@@ -641,13 +775,15 @@ int videocombine(GlobalContext* video_ctx,int flag)
 
     if ((ret = open_input_device()) < 0)
         goto end;
-    if ((ret = open_input_file(global_ctx->input_file)) < 0)
-        goto end;
+//    if ((ret = open_input_file(global_ctx->input_file)) < 0)
+//        goto end;
     if ((ret = open_output_file(global_ctx->outfilename)) < 0)
         goto end;
+//    if ((ret = open_output_device()) < 0)
+//          goto end;
 
     if ((ret = init_spec_filter(flag)) < 0)
-        goto end;
+          goto end;
 
     while (1) {
         for (i = 0; i < global_ctx->video_num; i++)
@@ -681,17 +817,34 @@ int videocombine(GlobalContext* video_ctx,int flag)
                         goto end;
                     }
                     if (got_frame) {
-
-                        //frame[i]->pts = av_frame_get_best_effort_timestamp(frame[i]);
-                        if(i == 0) {
-                            frame[i]->pts = m + k*4;
-                            tempPts = frame[i]->pts;
+                        //wait_frame(ifmt_ctx[i],&frame[i]->pts);
+                        frame[i]->pts = av_frame_get_best_effort_timestamp(frame[i]);
+                        if(k==0) {
+                            tempPts1 = frame[i]->pts;
                             k++;
                         }
-                        if (i == 1) {
-                            frame[i]->pts = tempPts;
+                        if(i==1) {
+                            if (m == 0) {
+                                tempPts2 = frame[i]->pts;
+                                m++;
+                            }
                         }
-                        //k++;
+                        if(i==0){
+                            frame[i]->pts = frame[i]->pts - tempPts1;
+                        }
+                        if(i==1){
+                            frame[i]->pts = frame[i]->pts - tempPts2;
+                        }
+
+//                        if(i == 0) {
+//                            frame[i]->pts = m + k*2;
+//                            tempPts = frame[i]->pts;
+//                            k++;
+//                        }
+//                        if (i == 1) {
+//                            frame[i]->pts = tempPts;
+//                        }
+
 
                         cout << "pts =" <<frame[i]->pts  << endl;
                         ret = av_buffersrc_add_frame(filter_ctx[stream_index].buffersrc_ctx[i], frame[i]);
@@ -762,6 +915,8 @@ int videocombine(GlobalContext* video_ctx,int flag)
 
                     ret = av_interleaved_write_frame(ofmt_ctx, &enc_pkt);
                     av_log(NULL, AV_LOG_INFO, "write frame %d\n", framecnt);
+                    if(framecnt == 2000)
+                        goto flush;
                     av_free_packet(&enc_pkt);
                 }
                 av_frame_unref(picref);
@@ -946,7 +1101,7 @@ int mult_video_up_down()
     inputfiles[0].filenames = "in1.flv";
     //inputfiles[0].video_expand = 0;
     inputfiles[0].video_idx = 0;
-    inputfiles[0].video_effect = VFX_EDGE;
+    inputfiles[0].video_effect = VFX_NULL;
     inputfiles[0].audio_effect = AFX_NULL;
     inputfiles[1].filenames = "in2.flv";
     //inputfiles[1].video_expand = 0;
@@ -964,4 +1119,128 @@ int mult_video_up_down()
     global_ctx->input_file = inputfiles;
 
     return videocombine(global_ctx,3);
+}
+
+int mult_video_north_west()
+{
+    //test 2x2
+    inputfiles = (InputFile*)av_malloc_array(2, sizeof(InputFile));
+    if (!inputfiles)
+        return AVERROR(ENOMEM);
+
+
+    inputfiles[0].filenames = "in1.flv";
+    //inputfiles[0].video_expand = 0;
+    inputfiles[0].video_idx = 0;
+    inputfiles[0].video_effect = VFX_NULL;
+    inputfiles[0].audio_effect = AFX_NULL;
+    inputfiles[1].filenames = "in2.flv";
+    //inputfiles[1].video_expand = 0;
+    inputfiles[1].video_idx = 1;
+    inputfiles[1].video_effect = VFX_NULL;
+    inputfiles[1].audio_effect = AFX_NULL;
+
+    global_ctx = (GlobalContext*)av_malloc(sizeof(GlobalContext));
+    global_ctx->video_num = 2;
+    global_ctx->grid_num = 2;
+    global_ctx->enc_bit_rate = 500000;
+    global_ctx->enc_height = 1080;
+    global_ctx->enc_width = 1920;
+    global_ctx->outfilename = "combined_north_west.flv";
+    global_ctx->input_file = inputfiles;
+
+    return videocombine(global_ctx,5);
+}
+
+int mult_video_north_east()
+{
+    //test 2x2
+    inputfiles = (InputFile*)av_malloc_array(2, sizeof(InputFile));
+    if (!inputfiles)
+        return AVERROR(ENOMEM);
+
+
+    inputfiles[0].filenames = "in1.flv";
+    //inputfiles[0].video_expand = 0;
+    inputfiles[0].video_idx = 0;
+    inputfiles[0].video_effect = VFX_NULL;
+    inputfiles[0].audio_effect = AFX_NULL;
+    inputfiles[1].filenames = "in2.flv";
+    //inputfiles[1].video_expand = 0;
+    inputfiles[1].video_idx = 1;
+    inputfiles[1].video_effect = VFX_NULL;
+    inputfiles[1].audio_effect = AFX_NULL;
+
+    global_ctx = (GlobalContext*)av_malloc(sizeof(GlobalContext));
+    global_ctx->video_num = 2;
+    global_ctx->grid_num = 2;
+    global_ctx->enc_bit_rate = 500000;
+    global_ctx->enc_height = 1080;
+    global_ctx->enc_width = 1920;
+    global_ctx->outfilename = "combined_north_east.flv";
+    global_ctx->input_file = inputfiles;
+
+    return videocombine(global_ctx,6);
+}
+
+int mult_video_south_west()
+{
+    //test 2x2
+    inputfiles = (InputFile*)av_malloc_array(2, sizeof(InputFile));
+    if (!inputfiles)
+        return AVERROR(ENOMEM);
+
+
+    inputfiles[0].filenames = "in1.flv";
+    //inputfiles[0].video_expand = 0;
+    inputfiles[0].video_idx = 0;
+    inputfiles[0].video_effect = VFX_NULL;
+    inputfiles[0].audio_effect = AFX_NULL;
+    inputfiles[1].filenames = "in2.flv";
+    //inputfiles[1].video_expand = 0;
+    inputfiles[1].video_idx = 1;
+    inputfiles[1].video_effect = VFX_NULL;
+    inputfiles[1].audio_effect = AFX_NULL;
+
+    global_ctx = (GlobalContext*)av_malloc(sizeof(GlobalContext));
+    global_ctx->video_num = 2;
+    global_ctx->grid_num = 2;
+    global_ctx->enc_bit_rate = 500000;
+    global_ctx->enc_height = 1080;
+    global_ctx->enc_width = 1920;
+    global_ctx->outfilename = "combined_south_west.flv";
+    global_ctx->input_file = inputfiles;
+
+    return videocombine(global_ctx,7);
+}
+
+int mult_video_south_east()
+{
+    //test 2x2
+    inputfiles = (InputFile*)av_malloc_array(2, sizeof(InputFile));
+    if (!inputfiles)
+        return AVERROR(ENOMEM);
+
+
+    inputfiles[0].filenames = "in1.flv";
+    //inputfiles[0].video_expand = 0;
+    inputfiles[0].video_idx = 0;
+    inputfiles[0].video_effect = VFX_NULL;
+    inputfiles[0].audio_effect = AFX_NULL;
+    inputfiles[1].filenames = "in2.flv";
+    //inputfiles[1].video_expand = 0;
+    inputfiles[1].video_idx = 1;
+    inputfiles[1].video_effect = VFX_NULL;
+    inputfiles[1].audio_effect = AFX_NULL;
+
+    global_ctx = (GlobalContext*)av_malloc(sizeof(GlobalContext));
+    global_ctx->video_num = 2;
+    global_ctx->grid_num = 2;
+    global_ctx->enc_bit_rate = 500000;
+    global_ctx->enc_height = 1080;
+    global_ctx->enc_width = 1920;
+    global_ctx->outfilename = "combined_south_east.flv";
+    global_ctx->input_file = inputfiles;
+
+    return videocombine(global_ctx,8);
 }
